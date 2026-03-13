@@ -1,0 +1,37 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-brand: #6366f1;
+}
+
+:root {
+  background-color: #f8fafc;
+  color: #1e293b;
+}
+
+#content p {
+  margin-bottom: 1.25rem;
+  line-height: 1.75;
+}
+
+#content strong {
+  color: var(--color-brand);
+  font-weight: 700;
+}
+
+.cursor::after {
+  content: '|';
+  animation: blink 1s infinite;
+  color: var(--color-brand);
+  margin-left: 2px;
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
