@@ -1,12 +1,12 @@
-let isBold = false
-let isCodeBlock = false
-let isInTable = false
+let state = {
+  isBold: false,
+  isCodeBlock: false,
+  isInTable: false,
+}
 
 self.onmessage = (e) => {
   if (e.data.type === 'START_STREAM') {
-    isBold = false
-    isCodeBlock = false
-    isInTable = false
+    state = { isBold: false, isCodeBlock: false, isInTable: false }
     simulateSSE()
   }
 }
@@ -30,28 +30,28 @@ async function simulateSSE() {
 \`\`\`javascript
 // 模拟一个高性能的任务调度器
 class TaskScheduler {
-  constructor() {
-    this.queue = [];
-    this.isProcessing = false;
-  }
+constructor() {
+  this.queue = [];
+  this.isProcessing = false;
+}
 
-  push(task) {
-    this.queue.push(task);
-    if (!this.isProcessing) this.process();
-  }
+push(task) {
+  this.queue.push(task);
+  if (!this.isProcessing) this.process();
+}
 
-  process() {
-    this.isProcessing = true;
-    requestAnimationFrame(() => {
-      const task = this.queue.shift();
-      if (task) {
-        task();
-        this.process();
-      } else {
-        this.isProcessing = false;
-      }
-    });
-  }
+process() {
+  this.isProcessing = true;
+  requestAnimationFrame(() => {
+    const task = this.queue.shift();
+    if (task) {
+      task();
+      this.process();
+    } else {
+      this.isProcessing = false;
+    }
+  });
+}
 }
 \`\`\`
 
@@ -67,64 +67,59 @@ class TaskScheduler {
     const remaining = text.slice(i)
     const char = text[i]
 
-    const headerMatch = remaining.match(/^(#{1,6})\s+(.*?)(\n|$)/)
-    if (!isCodeBlock && headerMatch && (i === 0 || text[i - 1] === '\n')) {
-      const level = headerMatch[1].length
-      self.postMessage({ type: 'TOKEN', token: { type: `H${level}`, value: headerMatch[2] } })
-      i += headerMatch[0].length
-      continue
-    }
-
-    const tableRowMatch = remaining.match(/^\|(.+)\|(\n|$)/)
-    if (!isCodeBlock && tableRowMatch && (i === 0 || text[i - 1] === '\n')) {
-      if (!isInTable) {
-        self.postMessage({ type: 'TOKEN', token: { type: 'TABLE_START' } })
-        isInTable = true
-      }
-      const cells = tableRowMatch[1].split('|').map((c) => c.trim())
-      if (cells.every((c) => c.match(/^-+$/) || c.match(/^:?-+:?$/))) {
-        i += tableRowMatch[0].length
+    if (!state.isCodeBlock && (i === 0 || text[i - 1] === '\n')) {
+      const hMatch = remaining.match(/^(#{1,6})\s+(.*?)(\n|$)/)
+      if (hMatch) {
+        sendToken({ type: `H${hMatch[1].length}`, value: hMatch[2] })
+        i += hMatch[0].length
         continue
       }
-      self.postMessage({ type: 'TOKEN', token: { type: 'TABLE_ROW', cells } })
-      i += tableRowMatch[0].length
-      continue
-    } else if (isInTable && char === '\n' && !remaining.slice(1).startsWith('|')) {
-      self.postMessage({ type: 'TOKEN', token: { type: 'TABLE_END' } })
-      isInTable = false
+
+      const tMatch = remaining.match(/^\|(.+)\|(\n|$)/)
+      if (tMatch) {
+        if (!state.isInTable) {
+          sendToken({ type: 'TABLE_START' })
+          state.isInTable = true
+        }
+        const cells = tMatch[1].split('|').map((c) => c.trim())
+        if (!cells.every((c) => c.match(/^[: -]+$/))) {
+          sendToken({ type: 'TABLE_ROW', cells })
+        }
+        i += tMatch[0].length
+        continue
+      } else if (state.isInTable) {
+        sendToken({ type: 'TABLE_END' })
+        state.isInTable = false
+      }
     }
 
     if (text.startsWith('```', i)) {
-      if (!isCodeBlock) {
-        self.postMessage({ type: 'TOKEN', token: { type: 'CODE_START' } })
-        const nextNL = text.indexOf('\n', i)
-        i = nextNL !== -1 ? nextNL + 1 : i + 3
-      } else {
-        self.postMessage({ type: 'TOKEN', token: { type: 'CODE_END' } })
-        i += 3
-      }
-      isCodeBlock = !isCodeBlock
+      sendToken({ type: state.isCodeBlock ? 'CODE_END' : 'CODE_START' })
+      state.isCodeBlock = !state.isCodeBlock
+      const nextNL = text.indexOf('\n', i)
+      i = state.isCodeBlock && nextNL !== -1 ? nextNL + 1 : i + 3
       continue
     }
 
-    if (!isCodeBlock && text.startsWith('**', i)) {
-      self.postMessage({ type: 'TOKEN', token: { type: isBold ? 'BOLD_END' : 'BOLD_START' } })
-      isBold = !isBold
+    if (!state.isCodeBlock && text.startsWith('**', i)) {
+      sendToken({ type: state.isBold ? 'BOLD_END' : 'BOLD_START' })
+      state.isBold = !state.isBold
       i += 2
       continue
     }
 
-    if (!isCodeBlock && !isInTable && char === '\n') {
-      self.postMessage({ type: 'TOKEN', token: { type: 'NEW_LINE' } })
-      i++
-      continue
+    if (!state.isCodeBlock && !state.isInTable && char === '\n') {
+      sendToken({ type: 'NEW_LINE' })
+    } else {
+      sendToken({ type: 'TEXT', value: char })
     }
 
-    self.postMessage({ type: 'TOKEN', token: { type: 'TEXT', value: char } })
     i++
-
-    await new Promise((r) => setTimeout(r, 10))
+    if (i % 5 === 0) await new Promise((r) => setTimeout(r, 5))
   }
-
   self.postMessage({ type: 'DONE' })
+}
+
+function sendToken(token) {
+  self.postMessage({ type: 'TOKEN', token })
 }
